@@ -1,0 +1,304 @@
+\section{Introduction}
+
+This document is a formal specification of a checkpointing system of nodes running the Ouroboros-BFT (PBFT) consensus for guarantees the ledger’s properties of an external Blockchain. The speficiation of OBFT protocol can be found in \cite{obft-paper}, which also contains a section on its application for a checkpointing system. A more in-depth information on checkpointing, along with analasis of security guarantees it offers, is provided by \cite{chkp-paper}.
+
+This specification is influenced by \cite{ledger-spec} and it aims to use the same conventions and notation.
+
+
+\section{Definitions}
+
+We define several types and corresponding accessor functions used further in the specification. In particular \BlockRef, \Vote~ and \Chkp~ are all references to a Blockchain block (by its hash and number) wihtout a signature, with a single signature and with a multisignature respectively (fig. \ref{fig:base-defs}).
+
+We also define the cryptographic functions \fun{sign} and \fun{recoverPubKey} (fig. \ref{fig:crypto-funs}) which are not going to be explained in more detail. They are assumed to use the ECDSA signature scheme.
+
+Finally, in fig. \ref{fig:config-params} we define the configuration parameters for the system which are: \textit{checkpointing interval} as the distance between two consecutive checkpointed blocks, the minimum number of signatures (votes) required to form a checkpoint, and the collection of federation nodes' public keys used for validating the votes.
+
+\begin{figure*}[htb]
+  \emph{Abstract types}
+  %
+  \begin{equation*}
+    \begin{array}{r@{~\in~}lr}
+      \var{hash} & \BH & \text{block hash}\\
+      \var{sig} & \Sig & \text{signature}\\
+      \var{pubKey} & \PubKey & \text{public key}\\
+    \end{array}
+  \end{equation*}
+  \emph{Derived types}
+  %
+  \begin{equation*}
+    \begin{array}{r@{~\in~}l@{~=~}lr}
+      (\var{hash}, \var{number})
+      & \BlockRef
+      & \BH \times \N
+      & \text{block reference}
+      \\
+      (\var{hash}, \var{number}, \var{sig})
+      & \Vote
+      & \BH \times \N \times \Sig
+      & \text{vote for a block}
+      \\
+      \var{msig}
+      & \MSig
+      & [\Sig]
+      & \text{multisignature}
+      \\
+      (\var{hash}, \var{number}, \var{msig})
+      & \Chkp
+      & \BH \times \N \times \Sig
+      & \text{checkpoint}
+      \\
+    \end{array}
+  \end{equation*}
+  %
+  \emph{Accessor functions}
+  \begin{equation*}
+    \begin{array}{r@{~\in~}lr}
+      \fun{hash} & \BlockRef \to \BH & \text{block hash} \\
+      \fun{hash} & \Vote \to \BH & \text{block hash} \\
+      \fun{hash} & \Chkp \to \BH & \text{block hash} \\
+      \fun{number} & \BlockRef \to \N & \text{block number} \\
+      \fun{number} & \Vote \to \N & \text{block number} \\
+      \fun{number} & \Chkp \to \N & \text{block number} \\
+      \fun{sig} & \Vote \to Sig & \text{voter's signature} \\
+    \end{array}
+  \end{equation*}
+  \caption{Type definitions}
+  \label{fig:base-defs}
+\end{figure*}
+
+\begin{figure*}[htb]
+  \emph{Cryptographic functions}
+  \begin{equation*}
+    \begin{array}{r@{~\in~}lr}
+      \fun{sign} & \BlockRef \to \Vote & \text{sign block reference to form a vote}\\
+      \fun{recoverPubKey} & \Sig \to \PubKey^? & \text{recover public key from the signature if valid}
+    \end{array}
+  \end{equation*}
+  \caption{Cryptographic functions}
+  \label{fig:crypto-funs}
+\end{figure*}
+
+\begin{figure*}[htb]
+  \emph{Configuration parameters}
+  \begin{equation*}
+    \begin{array}{r@{~\in~}lr}
+      \var{k} & \N & \text{checkpointing interval}\\
+      \var{m} & \N & \text{minimum number of signatures}\\
+      \var{fedPubKeys} & [\PubKey] & \text{federation public keys}\\
+    \end{array}
+  \end{equation*}
+  \caption{Cofniguration parameters}
+  \label{fig:config-params}
+\end{figure*}
+
+
+\clearpage
+\section{Casting a Vote}
+
+Checkpointing nodes form a federation running the OBFT consensus protocol. Each node holds the state formed by $\var{lastChkp} \in \Chkp$, which initially points to the Blockchain genesis block and has an empty multisignature, and $\var{votes} \in \Votes$ which is a sequence of votes gathered from all the federation nodes. 
+
+Each node observes the Blockchain using an associated node's JSON RPC and upon seeing a new block, expressed by the NEWBLOCK signal carrying a $\var{blockRef} \in \BlockRef$, and if the difference in the new block's number and last checkpoint's number is equal to the \var{k} parameter, then a vote is cast. The checkpointing node does so regardless of any forks occurring on the Blockchain, thus multiple votes from the same node can be cast on the same block number. Only a single candidate is later selected to form a \Chkp.
+
+These rules are expressed in fig. \ref{fig:casting-vote-rules}. Casting a vote results in sending a transaction to OBFT chain, which carries the vote.
+
+\begin{figure}[htb]
+  \begin{equation}\label{eq:no-vote}
+    \inference[No-Vote]
+    {
+      \fun{number}~\var{blockRef} \neq \fun{number}~\var{lastChkp} + \var{k}\\
+    }
+    {
+      \begin{array}{r}
+        \var{k}
+      \end{array}
+      \vdash
+      \left(
+      \begin{array}{l}
+        \var{lastChkp}\\
+        \var{votes}\\
+      \end{array}
+      \right)
+      \trans{NEWBLOCK}{\var{blockRef}}
+      \left(
+      \begin{array}{l}
+        \var{lastChkp}\\
+        \var{votes}\\
+      \end{array}
+      \right)
+    }
+  \end{equation}
+
+  \nextdef
+
+  \begin{equation}\label{eq:register-vote}
+    \inference[Register-Vote]
+    {
+      \fun{number}~\var{blockRef} = \fun{number}~\var{lastChkp} + \var{k} \\
+      \var{vote} \leteq \fun{sign}~\var{blockRef} \\
+      \var{votes'} \leteq \var{votes};vote\\ 
+    }
+    {
+      \begin{array}{r}
+        \var{k}
+      \end{array}
+      \vdash
+      \left(
+      \begin{array}{l}
+        \var{lastChkp}\\
+        \var{votes}\\
+      \end{array}
+      \right)
+      \trans{NEWBLOCK}{\var{blockRef}}
+      \left(
+      \begin{array}{l}
+        \var{lastChkp}\\
+        \var{votes'}\\
+      \end{array}
+      \right)
+    }
+  \end{equation}
+  \caption{Casting Vote inference rules}
+  \label{fig:casting-vote-rules}
+\end{figure}
+
+
+
+\clearpage
+\section{Reaching Consensus on a Checkpoint}
+
+First we define the helper functions (fig. \ref{fig:checkpoint-consensus-helpers}) used in reaching consensus on which block to checkpoint. Function \fun{findWinner} analyses the \var{votes} sequence and finds a candidate with most votes (TODO: tie-breaker to be defined). The winner is then converted to a \Chkp using the function \fun{makeCheckpoint}.
+
+Upon receiving the NEWVOTE signal (fig. \ref{fig:checkpoint-consensus-rules}), which is a transaction carrying a \var{vote}. If the \var{vote} has a correct signature then it is appended to the \var{votes} sequence and we attempt to find a winner. If the winner is found then a new \Chkp is formed and assigned to \var{lastChkp} variable. The \var{votes} sequence is cleared. 
+
+\begin{figure}[tbh]
+  \begin{align*}
+    & \fun{findWinner} \in \Votes \to \N \to \BlockRef^?\\
+    & \fun{findWinner}~\var{votes}~\var{m} =
+      \begin{cases}
+        b & \exists b = \argmax_b \fun{g}~\var{b},~ \fun{g}~\var{b} \geq \var{m}  \\
+        \Nothing & \text{otherwise}
+      \end{cases} \\
+    & ~~~~\where \\
+    & ~~~~\fun{g}~\var{b} \in \BlockRef \to \N \\
+    & ~~~~\fun{g}~\var{b} = \big\lvert [~\Nothing \mid\ \fun{hash}~\var{vote} = \fun{hash}~\var{b},~ \fun{number}~\var{vote} = \fun{number}~\var{b},~ vote \in votes] \big\rvert
+  \end{align*}
+
+  \begin{align*}
+    & \fun{makeCheckpoint} \in \Votes \to \BlockRef \to \Chkp \\
+    & \fun{makeCheckpoint}~\var{votes}~\var{b} = (\fun{hash}~\var{b}, \fun{number}~\var{b}, msig) \\
+    & ~~~~\where msig = [\fun{sig}~\var{vote} \mid\ \var{vote} \in \var{votes},~ \fun{hash}~\var{vote} = \fun{hash}~\var{b}]
+  \end{align*}
+
+  \caption{Checkpoint Consensus helper functions}
+  \label{fig:checkpoint-consensus-helpers}
+\end{figure}
+
+\begin{figure}[tbh]
+    \begin{equation}\label{eq:invalid-sig}
+    \inference[Invalid-Signature]
+    {
+      \fun{recoverPubKey}~(\fun{sig}~\var{vote}) \notin \var{fedPubKeys}\\
+    }
+    {
+      \begin{array}{r}
+        \var{m}\\
+        \var{fedPubKeys}
+      \end{array}
+      \vdash
+      \left(
+      \begin{array}{l}
+        \var{lastChkp}\\
+        \var{votes}\\
+      \end{array}
+      \right)
+      \trans{NEWVOTE}{\var{vote}}
+      \left(
+      \begin{array}{l}
+        \var{lastChkp}\\
+        \var{votes}\\
+      \end{array}
+      \right)
+    }
+  \end{equation}
+
+  \nextdef
+
+  \begin{equation}\label{eq:no-winner}
+    \inference[No-Winner]
+    {
+      \fun{recoverPubKey}~(\fun{sig}~\var{vote}) \in \var{fedPubKeys}\\
+      \var{votes'}\leteq\var{votes};\var{vote} \\
+      \fun{findWinner}~\var{votes'}~\var{m} = \Nothing 
+    }
+    {
+      \begin{array}{r}
+        \var{m}\\
+        \var{fedPubKeys}
+      \end{array}
+      \vdash
+      \left(
+      \begin{array}{l}
+        \var{lastChkp}\\
+        \var{votes}\\
+      \end{array}
+      \right)
+      \trans{NEWVOTE}{\var{vote}}
+      \left(
+      \begin{array}{l}
+        \var{lastChkp}\\
+        \var{votes'}\\
+      \end{array}
+      \right)
+    }
+  \end{equation}
+
+  \nextdef
+
+  \begin{equation}\label{eq:new-checkpoint}
+    \inference[New-Checkpoint]
+    {
+      \fun{recoverPubKey}~(\fun{sig}~\var{vote}) \in \var{fedPubKeys} \\
+      \var{votes'}\leteq\var{votes};\var{vote} \\
+      \fun{findWinner}~\var{votes'}~\var{m} = \var{b} \\
+      \var{lastChkp'}\leteq\fun{makeCheckpoint}~\var{votes'}~\var{b} \\
+      \var{votes''}\leteq~[]
+    }
+    {
+      \begin{array}{r}
+        \var{m}\\
+        \var{fedPubKeys}
+      \end{array}
+      \vdash
+      \left(
+      \begin{array}{l}
+        \var{lastChkp}\\
+        \var{votes}\\
+      \end{array}
+      \right)
+      \trans{NEWVOTE}{\var{vote}}
+      \left(
+      \begin{array}{l}
+        \var{lastChkp'}\\
+        \var{votes''}\\
+      \end{array}
+      \right)
+    }
+  \end{equation}
+  \caption{Checkpoint Consensus inference rules}
+  \label{fig:checkpoint-consensus-rules}
+\end{figure}
+
+\clearpage
+\section{Relaying Checkpoints into the Blockchain}
+
+This is not properly defined yet, as OBFT imposes a latency of $3t + 1$ slots (\cite{obft-paper}) on when a checkpoint becomes stable, which could possibly result in delays or decreased security in the Blockchain. The following approaches are under consideration:
+
+\begin{enumerate}
+  \item Federation posts checkpoint blocks (fixed checkpoint) -- checkpoint blocks are special blocks that contain checkpoint information along with parent hash and number. The checkpoint is therefore placed at a fixed position in the Blockchain. This approach conforms to the liveness guarantees presented in \cite{chkp-paper}, but depending on OBFT slot duration and Blockchain block interval it may result in periods of inactivity (or wasteful mining) in the Blockchain.
+  \item Federation posts checkpoint transaction (floating checkpoint) -- checkpoints are passed onto the blockchain as transactions. Once such transaction is included in the chain, the chain can be replaced with a different chain that contains exactly the same checkpoints. This means that mining in the Blockchain can continue without waiting for a checkpoint, but it also results in a varying position of the checkpoint in the chain, which lessens liveness guarantees.
+  \item Federation is queried for checkpoint information (oracle) -- this approach is presented in \cite{obft-paper}. It removes the problem of latency, but it provides no liveness guarantees. It also makes the federation nodes susceptible to DoS attacks, as the federation nodes need to be available to every node on the Blockchain network.
+\end{enumerate}
+
+
+
+
