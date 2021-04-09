@@ -1,17 +1,17 @@
 \section{Introduction}
 
-This document is a formal specification of a checkpointing system of nodes running the Ouroboros-BFT (PBFT) consensus for guarantees the ledger’s properties of an external Blockchain. The speficiation of OBFT protocol can be found in \cite{obft-paper}, which also contains a section on its application for a checkpointing system. A more in-depth information on checkpointing, along with analasis of security guarantees it offers, is provided by \cite{chkp-paper}.
+This document is a formal specification of a checkpointing system of nodes running the Ouroboros-BFT (OBFT) consensus for guaranteeing the integrity of an external blockchain. The specification of the OBFT protocol is described in \cite{obft-paper}, which also contains a section on its application for a checkpointing system. More in-depth information on checkpointing, along with an analysis of the security guarantees it offers, is provided by \cite{chkp-paper}.
 
-This specification is influenced by \cite{ledger-spec} and it aims to use the same conventions and notation.
+This specification is influenced by \cite{ledger-spec}, and it aims to use the same conventions and notation.
 
 
 \section{Definitions}
 
-We define several types and corresponding accessor functions used further in the specification. In particular \BlockRef, \Vote~ and \Chkp~ are all references to a Blockchain block (by its hash and number) wihtout a signature, with a single signature and with a multisignature respectively (fig. \ref{fig:base-defs}).
+We define several types and corresponding accessor functions that are used further in the specification. In particular \BlockRef, \Vote~ and \Chkp~ are all references to a blockchain block (by its hash and number) without a signature, with a single signature, and with multisignatures, respectively (fig. \ref{fig:base-defs}).
 
-We also define the cryptographic functions \fun{sign} and \fun{recoverPubKey} (fig. \ref{fig:crypto-funs}) which are not going to be explained in more detail. They are assumed to use the ECDSA signature scheme.
+We also define the cryptographic functions \fun{sign} and \fun{recoverPubKey} (fig. \ref{fig:crypto-funs}) which are not explained in more detail. They are assumed to use the ECDSA signature scheme.
 
-Finally, in fig. \ref{fig:config-params} we define the configuration parameters for the system which are: \textit{checkpointing interval} as the distance between two consecutive checkpointed blocks, the minimum number of signatures (votes) required to form a checkpoint, and the collection of federation nodes' public keys used for validating the votes.
+Finally, in fig. \ref{fig:config-params} we define the configuration parameters for the system, which are: \textit{checkpointing interval} as the distance between two consecutive checkpointed blocks, the minimum number of signatures (votes) required to form a checkpoint, and the collection of federation nodes' public keys used for validating the votes.
 
 \begin{figure*}[htb]
   \emph{Abstract types}
@@ -95,11 +95,11 @@ Finally, in fig. \ref{fig:config-params} we define the configuration parameters 
 \clearpage
 \section{Casting a Vote}
 
-Checkpointing nodes form a federation running the OBFT consensus protocol. Each node holds the state formed by $\var{lastChkp} \in \Chkp$, which initially points to the Blockchain genesis block and has an empty multisignature, and $\var{votes} \in \Votes$ which is a sequence of votes gathered from all the federation nodes. 
+Checkpointing nodes form a federation running the OBFT consensus protocol. Each node holds the state formed by $\var{lastChkp} \in \Chkp$, which initially points to the blockchain genesis block and has an empty multisignature, and $\var{votes} \in \Votes$ which is a sequence of votes gathered from all the federation nodes. 
 
-Each node observes the Blockchain using an associated node's JSON RPC and upon seeing a new block, expressed by the NEWBLOCK signal carrying a $\var{blockRef} \in \BlockRef$, and if the difference in the new block's number and last checkpoint's number is equal to the \var{k} parameter, then a vote is cast. The checkpointing node does so regardless of any forks occurring on the Blockchain, thus multiple votes from the same node can be cast on the same block number. Only a single candidate is later selected to form a \Chkp.
+Each node observes the blockchain using an associated node's JSON RPC. Upon seeing a new block, expressed by the NEWBLOCK signal carrying a $\var{blockRef} \in \BlockRef$, the node casts a vote if the difference between the new block's number and last checkpoint's number is equal to the \var{k} parameter. The checkpointing node does so regardless of any forks occurring on the blockchain. Thus multiple votes from the same node can be cast on the same block number. Only a single candidate is later selected to form a \Chkp.
 
-These rules are expressed in fig. \ref{fig:casting-vote-rules}. Casting a vote results in sending a transaction to OBFT chain, which carries the vote.
+These rules are expressed in fig. \ref{fig:casting-vote-rules}. Casting a vote results in sending a transaction that carries the vote to the OBFT chain.
 
 \begin{figure}[htb]
   \begin{equation}\label{eq:no-vote}
@@ -166,9 +166,9 @@ These rules are expressed in fig. \ref{fig:casting-vote-rules}. Casting a vote r
 \clearpage
 \section{Reaching Consensus on a Checkpoint}
 
-First we define the helper functions (fig. \ref{fig:checkpoint-consensus-helpers}) used in reaching consensus on which block to checkpoint. Function \fun{findWinner} analyses the \var{votes} sequence and finds a candidate with most votes (TODO: tie-breaker to be defined). The winner is then converted to a \Chkp using the function \fun{makeCheckpoint}.
+First, we define the helper functions (fig. \ref{fig:checkpoint-consensus-helpers}) used in reaching consensus on which block to checkpoint. Function \fun{findWinner} analyses the \var{votes} sequence and finds a candidate with most votes (TODO: tie-breaker to be defined). The winner is then converted to a \Chkp using the function \fun{makeCheckpoint}.
 
-Upon receiving the NEWVOTE signal (fig. \ref{fig:checkpoint-consensus-rules}), which is a transaction carrying a \var{vote}. If the \var{vote} has a correct signature then it is appended to the \var{votes} sequence and we attempt to find a winner. If the winner is found then a new \Chkp is formed and assigned to \var{lastChkp} variable. The \var{votes} sequence is cleared. 
+Upon receiving the NEWVOTE signal, which is a transaction carrying a \var{vote}, the consensus rules (fig. \ref{fig:checkpoint-consensus-rules}) determine how the node state changes as a result. If the \var{vote} has a correct signature, then it is appended to the \var{votes} sequence, and we attempt to find a winner. If the winner is found, then a new \Chkp is formed and assigned to \var{lastChkp} variable. The \var{votes} sequence is cleared. 
 
 \begin{figure}[tbh]
   \begin{align*}
@@ -291,12 +291,12 @@ Upon receiving the NEWVOTE signal (fig. \ref{fig:checkpoint-consensus-rules}), w
 \clearpage
 \section{Relaying Checkpoints into the Blockchain}
 
-This is not properly defined yet, as OBFT imposes a latency of $3t + 1$ slots (\cite{obft-paper}) on when a checkpoint becomes stable, which could possibly result in delays or decreased security in the Blockchain. The following approaches are under consideration:
+This process is not fully defined yet, as OBFT imposes a latency of $3t + 1$ slots (\cite{obft-paper}) on when a checkpoint becomes stable, which could result in delays or decreased security in the blockchain. The following approaches are under consideration:
 
 \begin{enumerate}
-  \item Federation posts checkpoint blocks (fixed checkpoint) -- checkpoint blocks are special blocks that contain checkpoint information along with parent hash and number. The checkpoint is therefore placed at a fixed position in the Blockchain. This approach conforms to the liveness guarantees presented in \cite{chkp-paper}, but depending on OBFT slot duration and Blockchain block interval it may result in periods of inactivity (or wasteful mining) in the Blockchain.
-  \item Federation posts checkpoint transaction (floating checkpoint) -- checkpoints are passed onto the blockchain as transactions. Once such transaction is included in the chain, the chain can be replaced with a different chain that contains exactly the same checkpoints. This means that mining in the Blockchain can continue without waiting for a checkpoint, but it also results in a varying position of the checkpoint in the chain, which lessens liveness guarantees.
-  \item Federation is queried for checkpoint information (oracle) -- this approach is presented in \cite{obft-paper}. It removes the problem of latency, but it provides no liveness guarantees. It also makes the federation nodes susceptible to DoS attacks, as the federation nodes need to be available to every node on the Blockchain network.
+  \item Federation posts checkpoint blocks (fixed checkpoint) -- checkpoint blocks are special blocks that contain checkpoint information along with parent hash and number. The checkpoint is therefore placed at a fixed position in the blockchain. This approach conforms to the liveness guarantees presented in \cite{chkp-paper}, but depending on OBFT slot duration and blockchain block interval, it may result in periods of inactivity (or wasteful mining) in the blockchain.
+  \item Federation posts checkpoint transaction (floating checkpoint) -- checkpoints are passed onto the blockchain as transactions. Once such a transaction is included in the chain, the chain can be replaced with a different chain that contains exactly the same checkpoints. This means that mining in the blockchain can continue without waiting for a checkpoint, but it also results in a varying position of the checkpoint in the chain, which lessens liveness guarantees.
+  \item Federation is queried for checkpoint information (oracle) -- this approach is presented in \cite{obft-paper}. It removes the problem of latency, but it provides no liveness guarantees. It also makes the federation nodes susceptible to DoS attacks, as the federation nodes need to be available to every node on the blockchain network.
 \end{enumerate}
 
 
