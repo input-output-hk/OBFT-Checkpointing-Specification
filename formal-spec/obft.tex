@@ -168,7 +168,7 @@ These rules are expressed in fig. \ref{fig:casting-vote-rules}. Casting a vote r
 
 First, we define the helper functions (fig. \ref{fig:checkpoint-consensus-helpers}) used in reaching consensus on which block to checkpoint. Function \fun{findWinner} analyses the \var{votes} sequence and finds a candidate with most votes (TODO: tie-breaker to be defined). The winner is then converted to a \Chkp using the function \fun{makeCheckpoint}.
 
-Upon receiving the NEWVOTE signal (fig. \ref{fig:checkpoint-consensus-rules}), which is a transaction carrying a \var{vote}, the voting process begins. If the \var{vote} has a correct signature, then it is appended to the \var{votes} sequence, and we attempt to find a winner. If the winner is found, then a new \Chkp is formed and assigned to \var{lastChkp} variable. The \var{votes} sequence is cleared. 
+Upon receiving the NEWVOTE signal, which is a transaction carrying a \var{vote}, the consensus rules (fig. \ref{fig:checkpoint-consensus-rules}) determine how the node state changes as a result. If the \var{vote} has a correct signature, then it is appended to the \var{votes} sequence, and we attempt to find a winner. If the winner is found, then a new \Chkp is formed and assigned to \var{lastChkp} variable. The \var{votes} sequence is cleared. 
 
 \begin{figure}[tbh]
   \begin{align*}
